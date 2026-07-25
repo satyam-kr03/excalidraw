@@ -36,7 +36,6 @@ import {
 } from "../app_constants";
 
 import { encodeFilesForUpload } from "./FileManager";
-import { saveFilesToFirebase } from "./firebase";
 
 import type { WS_SUBTYPES } from "../app_constants";
 
@@ -200,45 +199,13 @@ const legacy_decodeFromBackend = async ({
 };
 
 export const importFromBackend = async (
-  id: string,
-  decryptionKey: string,
+  _id: string,
+  _decryptionKey: string,
 ): Promise<ImportedDataState> => {
-  try {
-    const response = await fetch(`${BACKEND_V2_GET}${id}`);
-
-    if (!response.ok) {
-      window.alert(t("alerts.importBackendFailed"));
-      return {};
-    }
-    const buffer = await response.arrayBuffer();
-
-    try {
-      const { data: decodedBuffer } = await decompressData(
-        new Uint8Array(buffer),
-        {
-          decryptionKey,
-        },
-      );
-      const data: ImportedDataState = JSON.parse(
-        new TextDecoder().decode(decodedBuffer),
-      );
-
-      return {
-        elements: data.elements || null,
-        appState: data.appState || null,
-      };
-    } catch (error: any) {
-      console.warn(
-        "error when decoding shareLink data using the new format:",
-        error,
-      );
-      return legacy_decodeFromBackend({ buffer, decryptionKey });
-    }
-  } catch (error: any) {
-    window.alert(t("alerts.importBackendFailed"));
-    console.error(error);
-    return {};
-  }
+  // Offline mode: backend import is disabled
+  console.warn("Import from backend is disabled in offline mode");
+  window.alert("This feature is not available in offline mode.");
+  return {};
 };
 
 type ExportToBackendResult =
@@ -246,62 +213,14 @@ type ExportToBackendResult =
   | { url: string; errorMessage: null };
 
 export const exportToBackend = async (
-  elements: readonly ExcalidrawElement[],
-  appState: Partial<AppState>,
-  files: BinaryFiles,
+  _elements: readonly ExcalidrawElement[],
+  _appState: Partial<AppState>,
+  _files: BinaryFiles,
 ): Promise<ExportToBackendResult> => {
-  const encryptionKey = await generateEncryptionKey("string");
-
-  const payload = await compressData(
-    new TextEncoder().encode(
-      serializeAsJSON(elements, appState, files, "database"),
-    ),
-    { encryptionKey },
-  );
-
-  try {
-    const filesMap = new Map<FileId, BinaryFileData>();
-    for (const element of elements) {
-      if (isInitializedImageElement(element) && files[element.fileId]) {
-        filesMap.set(element.fileId, files[element.fileId]);
-      }
-    }
-
-    const filesToUpload = await encodeFilesForUpload({
-      files: filesMap,
-      encryptionKey,
-      maxBytes: FILE_UPLOAD_MAX_BYTES,
-    });
-
-    const response = await fetch(BACKEND_V2_POST, {
-      method: "POST",
-      body: payload.buffer,
-    });
-    const json = await response.json();
-    if (json.id) {
-      const url = new URL(window.location.href);
-      // We need to store the key (and less importantly the id) as hash instead
-      // of queryParam in order to never send it to the server
-      url.hash = `json=${json.id},${encryptionKey}`;
-      const urlString = url.toString();
-
-      await saveFilesToFirebase({
-        prefix: `/files/shareLinks/${json.id}`,
-        files: filesToUpload,
-      });
-
-      return { url: urlString, errorMessage: null };
-    } else if (json.error_class === "RequestTooLargeError") {
-      return {
-        url: null,
-        errorMessage: t("alerts.couldNotCreateShareableLinkTooBig"),
-      };
-    }
-
-    return { url: null, errorMessage: t("alerts.couldNotCreateShareableLink") };
-  } catch (error: any) {
-    console.error(error);
-
-    return { url: null, errorMessage: t("alerts.couldNotCreateShareableLink") };
-  }
+  // Offline mode: backend export is disabled
+  console.warn("Export to backend is disabled in offline mode");
+  return {
+    url: null,
+    errorMessage: "Sharing via link is not available in offline mode. Use 'Export to file' instead.",
+  };
 };
